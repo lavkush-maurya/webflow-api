@@ -12,6 +12,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [collectionsInfo, setCollectionsInfo] = useState({});
+  const [publishing, setPublishing] = useState(false);
   
   const siteId = process.env.NEXT_PUBLIC_SITE_ID;
 
@@ -47,16 +49,56 @@ export default function Home() {
       console.log('Fetching collections for site:', siteId);
       
       const response = await api.getCollections(siteId);
-      setCollections(response.data || []);
-      console.log('Collections fetched:', response.data?.length || 0);
+      const collectionsData = response.data || [];
+      setCollections(collectionsData);
+      
+      console.log('Collections fetched:', collectionsData.length);
+      
+      // Fetch additional info for each collection
+      await fetchCollectionsInfo(collectionsData);
+      
     } catch (err) {
-      console.error('Error fetching collection fields:', err);
-      const details = err.response?.data?.details || err.response?.data?.error || err.message;
-      setError(`Failed to fetch fields: ${details}`);
-      setFields([]);
+      setError(`Failed to fetch collections: ${err.response?.data?.details || err.message}`);
+      console.error('Error fetching collections:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCollectionsInfo = async (collectionsData) => {
+    const info = {};
+    
+    // Fetch field counts and item counts for each collection
+    const promises = collectionsData.map(async (collection) => {
+      try {
+        // Fetch fields count
+        const fieldsResponse = await api.getCollectionFields(collection.id);
+        const fieldsCount = fieldsResponse.data?.length || 0;
+        
+        // Fetch items count
+        const itemsResponse = await api.getItems(collection.id);
+        const itemsCount = itemsResponse.data?.length || 0;
+        
+        info[collection.id] = {
+          fieldsCount,
+          itemsCount,
+          lastUpdated: new Date().toISOString()
+        };
+        
+        console.log(`Collection ${collection.displayName}: ${fieldsCount} fields, ${itemsCount} items`);
+        
+      } catch (error) {
+        console.error(`Error fetching info for collection ${collection.displayName}:`, error);
+        info[collection.id] = {
+          fieldsCount: 0,
+          itemsCount: 0,
+          error: true
+        };
+      }
+    });
+    
+    await Promise.all(promises);
+    setCollectionsInfo(info);
   };
 
   const fetchCollectionFields = async () => {
@@ -67,22 +109,85 @@ export default function Home() {
       console.log('Fields fetched:', response.data?.length || 0);
     } catch (err) {
       console.error('Error fetching collection fields:', err);
-      setFields([]); // Reset fields on error
+      setFields([]);
     }
   };
 
   const handleItemCreated = () => {
-    setRefreshTrigger(prev => prev + 1); // Trigger refresh
+    setRefreshTrigger(prev => prev + 1);
+    // Update the item count for the selected collection
+    if (selectedCollection && collectionsInfo[selectedCollection]) {
+      setCollectionsInfo(prev => ({
+        ...prev,
+        [selectedCollection]: {
+          ...prev[selectedCollection],
+          itemsCount: prev[selectedCollection].itemsCount + 1
+        }
+      }));
+    }
   };
 
   const handleItemUpdated = () => {
     setSelectedItem(null);
-    setRefreshTrigger(prev => prev + 1); // Trigger refresh
+    setRefreshTrigger(prev => prev + 1);
   };
+
+  const handleItemDeleted = () => {
+    // Update the item count when an item is deleted
+    if (selectedCollection && collectionsInfo[selectedCollection]) {
+      setCollectionsInfo(prev => ({
+        ...prev,
+        [selectedCollection]: {
+          ...prev[selectedCollection],
+          itemsCount: Math.max(0, prev[selectedCollection].itemsCount - 1)
+        }
+      }));
+    }
+  };
+
+  const getCollectionDisplayText = (collection) => {
+    const info = collectionsInfo[collection.id];
+    
+    if (!info) {
+      return `${collection.displayName} (Loading...)`;
+    }
+    
+    if (info.error) {
+      return `${collection.displayName} (Error loading data)`;
+    }
+    
+    const fieldsText = info.fieldsCount === 1 ? 'field' : 'fields';
+    const itemsText = info.itemsCount === 1 ? 'item' : 'items';
+    
+    return `${collection.displayName} (${info.itemsCount} ${itemsText}, ${info.fieldsCount} ${fieldsText})`;
+  };
+
+  const handlePublishSite = async () => {
+    if (!confirm('Are you sure you want to publish the entire site? This will make all changes live.')) {
+      return;
+    }
+    
+    try {
+      setPublishing(true);
+      console.log('Publishing site:', siteId);
+      
+      const response = await api.publishSite(siteId);
+      
+      alert('Site published successfully! Changes are now live.');
+      console.log('Site published:', response.data);
+      
+    } catch (error) {
+      console.error('Error publishing site:', error);
+      alert(`Failed to publish site: ${error.response?.data?.details || error.message}`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
 
   return (
     <div style={{ 
-      maxWidth: '1200px', 
+      maxWidth: '1400px', 
       margin: '0 auto', 
       padding: '20px',
       fontFamily: 'Arial, sans-serif'
@@ -92,8 +197,33 @@ export default function Home() {
           🌐 Webflow CMS Manager
         </h1>
         <p style={{ color: '#666' }}>
-          Manage your Webflow CMS collections and items
+          Manage your Webflow CMS collections and items with support for all field types
         </p>
+
+        {/* Site Publish Button */}
+        <div style={{ marginTop: '20px' }}>
+          <button
+            onClick={handlePublishSite}
+            disabled={publishing || loading}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: publishing ? '#ccc' : '#28a745',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: publishing ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              transition: 'background-color 0.2s'
+            }}
+          >
+            {publishing ? '🚀 Publishing Site...' : '🚀 Publish Entire Site'}
+          </button>
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            This will publish all changes to your live website
+          </p>
+        </div>
       </header>
 
       {error && (
@@ -117,7 +247,7 @@ export default function Home() {
           value={selectedCollection} 
           onChange={(e) => {
             setSelectedCollection(e.target.value);
-            setSelectedItem(null); // Reset selected item
+            setSelectedItem(null);
           }}
           disabled={loading}
           style={{
@@ -134,10 +264,32 @@ export default function Home() {
           </option>
           {collections.map(collection => (
             <option key={collection.id} value={collection.id}>
-              {collection.displayName} ({collection.id})
+              {getCollectionDisplayText(collection)}
             </option>
           ))}
         </select>
+        
+        {/* Display selected collection info */}
+        {selectedCollection && collectionsInfo[selectedCollection] && (
+          <div style={{ 
+            marginTop: '10px', 
+            padding: '10px', 
+            backgroundColor: '#f8f9fa', 
+            borderRadius: '4px',
+            fontSize: '14px',
+            color: '#495057'
+          }}>
+            <strong>Selected Collection Info:</strong>
+            <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
+              <li>Collection ID: {selectedCollection}</li>
+              <li>Fields: {collectionsInfo[selectedCollection].fieldsCount}</li>
+              <li>Items: {collectionsInfo[selectedCollection].itemsCount}</li>
+              <li>
+                Last Updated: {new Date(collectionsInfo[selectedCollection].lastUpdated).toLocaleString()}
+              </li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {selectedCollection && (
@@ -152,6 +304,8 @@ export default function Home() {
             collectionId={selectedCollection}
             onItemSelect={setSelectedItem}
             refreshTrigger={refreshTrigger}
+            fields={fields}
+            onItemDeleted={handleItemDeleted}
           />
         </div>
       )}

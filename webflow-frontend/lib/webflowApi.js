@@ -7,7 +7,7 @@ const webflowApi = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // Increased timeout for site publish
 });
 
 // Add request interceptor for logging
@@ -37,6 +37,10 @@ webflowApi.interceptors.response.use(
 export const api = {
   // Health check
   healthCheck: () => webflowApi.get('/health'),
+  
+  // Sites
+  getSite: (siteId) => webflowApi.get(`/sites/${siteId}`),
+  publishSite: (siteId, domains = []) => webflowApi.post(`/sites/${siteId}/publish`, { domains }),
   
   // Collections
   getCollections: (siteId) => webflowApi.get(`/collections/site/${siteId}`),

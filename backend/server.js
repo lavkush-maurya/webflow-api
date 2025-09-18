@@ -5,6 +5,7 @@ import { WebflowClient } from 'webflow-api';
 import http from 'http'; // <-- add this
 import collectionRoutes from './routes/collectionRoutes.js';
 import itemRoutes from './routes/itemRoutes.js';
+import siteRoutes from './routes/siteRoutes.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/collections', collectionRoutes);
 app.use('/api/collections', itemRoutes);
+app.use('/api/sites', siteRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
